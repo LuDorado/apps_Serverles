@@ -1,0 +1,33 @@
+service: contact-form-nerd-wshop
+frameworkVersion: "3"
+
+custom:
+  secrets: ${file(secrets.json)}
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  deploymentBucket:
+    blockPublicAccess: true
+    versioning: true
+    serverSideEncryption: AES256
+  # passing base domain name and stage to our functions 
+  environment:
+    DOMAIN: ${self:custom.secrets.DOMAIN}
+    EMAIL: ${self:custom.secrets.EMAIL}
+    STAGE: "dev"
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "ses:SendEmail"
+      Resource: "*"
+
+functions:
+  send:
+    handler: handler.send
+    description: "Send users messages to our email"
+    events:
+      - http:
+          path: /contact
+          method: POST
+          # cors: true

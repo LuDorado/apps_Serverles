@@ -1,0 +1,150 @@
+service: web-app-nerd-wshop
+frameworkVersion: "3"
+plugins:
+  # - serverless-domain-manager
+  # - serverless-certificate-creator
+  - serverless-s3-encryption
+  - serverless-s3-sync
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  deploymentBucket:
+    blockPublicAccess: true
+    versioning: true
+    serverSideEncryption: AES256
+  # passing base domain name and stage to our functions 
+  # environment:
+  #   DOMAIN: ${self:custom.customDomain.domainName}
+  #   STAGE: ${self:provider.stage}
+
+# functions:
+#   contact:
+#     handler: src/functions/contact.send_message
+#     description: "Send users messages to our email"
+#     timeout: 3
+#     events:
+#       - httpApi:
+#           path: /contact-us
+#           method: POST
+#           cors:
+            # origin: '*'
+            # headers:
+            #   - Content-Type
+            #   - X-Amz-Date
+            #   - Authorization
+            #   - X-Api-Key
+            #   - X-Amz-Security-Token
+            #   - X-Amz-User-Agent
+            #   - X-Amzn-Trace-Id
+            # allowCredentials: false
+            # # Caches on browser and proxy for 10 minutes and doesnt allow proxy to serve out of date content
+            # cacheControl: 'max-age=600, s-maxage=600, proxy-revalidate'
+
+custom:
+  # The domain name to be used
+  s3Bucket: nerdearla-workshop.awsgirls.com
+  # S3 sync plugin configuration
+  s3Sync:
+    - bucketName: ${self:custom.s3Bucket}
+      localDir: src
+  # domains:
+  #   # References to 'dev' stage
+  #   dev:
+  #     domainName: ${self:custom.s3Bucket}
+  #     certificateName: ${self:custom.s3Bucket}
+  # Amazon Certificate Manager
+  # customCertificate:
+  #   hostedZoneNames:"awsgirls.com."
+  #   certificateName: ${self:custom.domains.${self:provider.stage}.certificateName}
+  #   region: ${self:provider.region}
+  # Route53 Alias
+  # customDomain:
+  #   domainName: ${self:custom.domains.${self:provider.stage}.domainName}
+  #   certificateName: ${self:custom.domains.${self:provider.stage}.certificateName}
+  # Enable plugin to create an A Alias and AAAA Alias records in Route53
+  #   createRoute53Record: true
+  # Enable plugin to autorun create_domain/delete_domain as part of sls deploy/remove
+  #   autoDomain: true
+
+resources:
+  Resources:
+    WebAppS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.s3Bucket}
+        # AccessControl: PublicRead
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        WebsiteConfiguration:
+          IndexDocument: index.html
+    
+    WebAppBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket:
+          Ref: WebAppS3Bucket
+        PolicyDocument:
+          Statement:
+            - Sid: PublicReadGetObject
+              Effect: Allow
+              Principal: 
+                CanonicalUser: !GetAtt CdnOai.S3CanonicalUserId
+              Action:
+                - s3:GetObject
+              Resource: arn:aws:s3:::${self:custom.s3Bucket}/*
+    
+    WebAppCdn:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: "true"
+          DefaultRootObject: "index.html"
+          DefaultCacheBehavior:
+            AllowedMethods:
+              - HEAD
+              - GET
+              - OPTIONS
+              # - POST
+              # - PUT
+              # - PATCH
+              # - DELETE
+            DefaultTTL: "0"
+            MaxTTL: "0"
+            MinTTL: "0"
+            TargetOriginId: myAPIOrigin
+            ForwardedValues:
+              QueryString: 'false'
+              Cookies:
+                Forward: none
+            ViewerProtocolPolicy : redirect-to-https
+ 
+          Origins:
+            - DomainName:  ${self:custom.s3Bucket}.s3.amazonaws.com
+              Id: myAPIOrigin
+              # OriginPath: /${self:provider.stage}
+              # CustomOriginConfig:
+              #   OriginProtocolPolicy: https-only
+              # Here's the origin from S3...
+              S3OriginConfig:
+                OriginAccessIdentity:
+                  Fn::Join:
+                    - ''
+                    -
+                      - 'origin-access-identity/cloudfront/'
+                      - Ref: CdnOai
+
+    CdnOai:
+      Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+      Properties: 
+        CloudFrontOriginAccessIdentityConfig: 
+          Comment: 'Origin Identity'
+
+Outputs:
+    WebAppCloudFrontDistributionOutput:
+      Value:
+        'Fn::GetAtt': [ WebAppCdn, DomainName ]
+
+
