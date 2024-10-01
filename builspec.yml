@@ -6,6 +6,7 @@ phases:
       - node --version
   pre_build:
     commands:
+      - cd Front/src
       - npm install
       - npm ruin build
       - AWS_MAX_ATTEMPTS=10 aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths '/*'
